@@ -4655,6 +4655,15 @@ async def user_api_key_auth(
             if body_parse_exception is not None:
                 raise body_parse_exception
             raise
+        from litellm.proxy.auth.vpn_identity import vpn_identity_matches
+
+        if not vpn_identity_matches(request, user_api_key_auth_obj.user_id):
+            raise ProxyException(
+                message="The credential belongs to a different VPN profile",
+                type=ProxyErrorTypes.auth_error,
+                param=None,
+                code=403,
+            )
         user_api_key_auth_obj.budget_reservation = None
         user_api_key_auth_obj.agent_caller = agent_caller_from_headers(
             safe_get_request_headers(request), user_api_key_auth_obj

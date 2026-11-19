@@ -11,7 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   NUMERIC_CELL_CLASS,
   Table,
@@ -24,7 +31,7 @@ import {
 import { cn } from "@/lib/cva.config";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/lib/toast";
-import { keyListCall, regenerateKeyCall } from "../networking";
+import { keyCreateCall, keyListCall, regenerateKeyCall } from "../networking";
 import { KeyResponse } from "../key_team_helpers/key_list";
 import { formatExpiresUtc, isKeyExpired, calculateExpiryPreviewFromDuration } from "@/utils/keyExpiryUtils";
 
@@ -97,6 +104,22 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
   });
 
   const keys = data ?? [];
+
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [creatingKey, setCreatingKey] = useState(false);
+
+  async function createKey() {
+    setCreatingKey(true);
+    try {
+      const result = await keyCreateCall(accessToken, userId, {});
+      setCreatedKey(result.key);
+      await queryClient.invalidateQueries({ queryKey: [KEYS_QUERY_KEY, accessToken, userId] });
+    } catch {
+      toast.error("Could not create API key");
+    } finally {
+      setCreatingKey(false);
+    }
+  }
 
   const openRotateModal = (key: KeyResponse) => {
     setRotateTarget(key);
@@ -180,6 +203,18 @@ const KeysPanel: React.FC<Props> = ({ accessToken, userId, premiumUser }) => {
           {t("chat.keysPanel.description")}
           {premiumUser && t("chat.keysPanel.descriptionRotate")}
         </p>
+        <Button className="mt-3" size="sm" onClick={createKey} disabled={creatingKey || Boolean(createdKey)}>
+          Create key
+        </Button>
+        <Dialog open={Boolean(createdKey)} onOpenChange={(open) => !open && setCreatedKey(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New API key</DialogTitle>
+              <DialogDescription>Copy this key now. It is shown once.</DialogDescription>
+            </DialogHeader>
+            <Input aria-label="New API key" readOnly value={createdKey ?? ""} />
+          </DialogContent>
+        </Dialog>
       </div>
 
       {isLoading ? (

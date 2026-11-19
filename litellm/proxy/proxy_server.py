@@ -836,6 +836,7 @@ from litellm.proxy.management_endpoints.session_endpoints import (
     router as session_management_router,
 )
 from litellm.proxy.management_endpoints.sso.saml_sso import SAML_AUTHN_REQUEST_TTL_SECONDS
+from litellm.proxy.management_endpoints.subscription_quota import router as subscription_quota_router
 from litellm.proxy.management_endpoints.subscription_accounts import (
     router as subscription_accounts_router,
 )
@@ -19511,6 +19512,42 @@ async def login(request: Request):
     return redirect_response
 
 
+@router.get("/vpn/session", include_in_schema=False)
+async def vpn_session(request: Request):
+    from litellm.proxy.auth.login_utils import LoginResult, create_ui_token_object, encode_ui_session_jwt
+    from litellm.proxy.auth.vpn_identity import trusted_vpn_user
+    from litellm.proxy.management_endpoints.ui_sso import set_session_token_cookie
+
+    user_id: Final = trusted_vpn_user(request)
+    if user_id is None:
+        raise HTTPException(status_code=403, detail="A trusted VPN profile is required")
+    if not master_key or prisma_client is None:
+        raise HTTPException(status_code=503, detail="VPN login is unavailable")
+    user: Final = await prisma_client.db.litellm_usertable.find_unique(where={"user_id": user_id})
+    if user is None or user.user_role not in ("internal_user", "proxy_admin"):
+        raise HTTPException(status_code=403, detail="VPN account is unavailable")
+    key: Final = await generate_key_helper_fn(
+        llm_router=llm_router,
+        request_type="key",
+        user_role=user.user_role,
+        duration=LITELLM_UI_SESSION_DURATION,
+        key_max_budget=litellm.max_ui_session_budget,
+        user_id=user_id,
+        team_id=UI_TEAM_ID,
+    )
+    result: Final = LoginResult(user_id, key["token"], user.user_email, user.user_role)
+    token: Final = encode_ui_session_jwt(
+        create_ui_token_object(result, general_settings, premium_user), master_key
+    )
+    response: Final = RedirectResponse(
+        url=f"{get_server_root_path().rstrip('/')}/ui/chat",
+        status_code=303,
+        headers={"Cache-Control": "no-store"},
+    )
+    set_session_token_cookie(response, request, token)
+    return response
+
+
 @router.post("/v2/login", include_in_schema=False)  # hidden helper for UI logins via API
 async def login_v2(request: Request):
     global premium_user, general_settings, master_key
@@ -22553,6 +22590,7 @@ app.include_router(lens_router)
 app.include_router(plugin_router)
 app.include_router(cost_tracking_settings_router)
 app.include_router(subscription_accounts_router)
+app.include_router(subscription_quota_router)
 app.include_router(prompt_caching_requests_router)
 app.include_router(router_settings_router)
 app.include_router(fallback_management_router)

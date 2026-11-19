@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { dailyActivityAggregatedCall } from "../networking";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SubscriptionQuota, useSubscriptionQuota } from "./SubscriptionQuota";
 
 const USAGE_QUERY_KEY = "chat-user-usage";
 
@@ -94,6 +95,8 @@ const UsagePanel: React.FC<Props> = ({ accessToken, userId }) => {
   const { t } = useTranslation();
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const { start, end } = getDateRange(timeRange);
+  const quota = useSubscriptionQuota(accessToken);
+  const subscriptionMode = quota.data != null;
 
   const { data, isLoading } = useQuery({
     queryKey: [USAGE_QUERY_KEY, accessToken, userId, timeRange],
@@ -119,7 +122,9 @@ const UsagePanel: React.FC<Props> = ({ accessToken, userId }) => {
 
   const statCards: Array<{ label: string; value: string; sub?: string; subVariant?: "error" }> = meta
     ? [
-        { label: t("chat.usagePanel.totalSpend"), value: `$${meta.total_spend.toFixed(2)}` },
+        ...(subscriptionMode
+          ? []
+          : [{ label: t("chat.usagePanel.totalSpend"), value: `$${meta.total_spend.toFixed(2)}` }]),
         { label: t("chat.usagePanel.apiRequests"), value: formatNumber(meta.total_api_requests) },
         {
           label: t("chat.usagePanel.tokensUsed"),
@@ -146,6 +151,7 @@ const UsagePanel: React.FC<Props> = ({ accessToken, userId }) => {
 
   return (
     <div className="w-full">
+      <SubscriptionQuota quota={quota} />
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-base font-semibold text-foreground mb-0.5">{t("chat.usagePanel.title")}</h2>
@@ -201,10 +207,12 @@ const UsagePanel: React.FC<Props> = ({ accessToken, userId }) => {
 
           {dailyData.length > 1 && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="border rounded-lg p-4 bg-card">
-                <div className="text-xs text-muted-foreground mb-2">{t("chat.usagePanel.dailySpend")}</div>
-                <SparklineBar data={dailySpend} maxVal={maxSpend} />
-              </div>
+              {!subscriptionMode && (
+                <div className="border rounded-lg p-4 bg-card">
+                  <div className="text-xs text-muted-foreground mb-2">{t("chat.usagePanel.dailySpend")}</div>
+                  <SparklineBar data={dailySpend} maxVal={maxSpend} />
+                </div>
+              )}
               <div className="border rounded-lg p-4 bg-card">
                 <div className="text-xs text-muted-foreground mb-2">{t("chat.usagePanel.dailyRequests")}</div>
                 <SparklineBar data={dailyRequests} maxVal={maxRequests} />
