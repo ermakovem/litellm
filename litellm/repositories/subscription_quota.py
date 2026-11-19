@@ -14,6 +14,15 @@ class Snapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class SharedQuotaUsage:
+    source: str
+    window: str
+    remaining_percent: float
+    resets_at: int
+    observed_at: int
+
+
+@dataclass(frozen=True, slots=True)
 class QuotaUsage:
     source: str
     window: str
@@ -149,6 +158,17 @@ class QuotaLedger:
     def shares(self) -> list[tuple[str, str, float]]:
         with closing(sqlite3.connect(self.path)) as db:
             return db.execute("SELECT source, user_id, percent FROM subscription_share ORDER BY source, user_id").fetchall()
+
+    def shared_usage(self, source: str | None = None) -> list[SharedQuotaUsage]:
+        query: Final = (
+            "SELECT source, window, 100 - used_percent, resets_at, observed_at "
+            "FROM subscription_window"
+        )
+        where: Final = " WHERE source=?" if source is not None else ""
+        parameters: Final = (source,) if source is not None else ()
+        with closing(sqlite3.connect(self.path)) as db:
+            rows: Final = db.execute(query + where + " ORDER BY source, window", parameters).fetchall()
+        return [SharedQuotaUsage(*row) for row in rows]
 
     def usage(self, user_id: str) -> list[QuotaUsage]:
         with closing(sqlite3.connect(self.path)) as db:

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.management_endpoints.subscription_quota import _ledger
+from litellm.proxy.management_endpoints.subscription_quota import _ledger, shared_quota_enabled
 from litellm.types.utils import StandardLoggingPayload
 
 
@@ -35,6 +35,8 @@ class SubscriptionQuotaLogger(CustomLogger):
     async def async_pre_call_hook(
         self, user_api_key_dict: UserAPIKeyAuth, cache: object, data: dict[str, object], call_type: str
     ) -> None:
+        if shared_quota_enabled():
+            return
         policy: Final = _policy(data.get("model"))
         if policy is None:
             return
@@ -53,6 +55,8 @@ class SubscriptionQuotaLogger(CustomLogger):
     async def async_log_success_event(
         self, kwargs: Mapping[str, object], response_obj: object, start_time: datetime, end_time: datetime
     ) -> None:
+        if shared_quota_enabled():
+            return
         raw: Final = kwargs.get("standard_logging_object")
         if not isinstance(raw, dict):
             return

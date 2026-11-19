@@ -17,16 +17,21 @@ type Window = {
   observed_at: number;
   provider_remaining_percent?: number;
   unallocated_points?: number;
+  shared?: boolean;
 };
 
 type Share = { source: string; user_id: string; percent: number; windows?: Window[] };
 
-async function quotaRequest<T>(token: string, path: string, payload?: Share): Promise<T | null> {
-  const response = await fetch(`${getProxyBaseUrl()}/subscription-quota/${path}`, {
+function quotaFetch(token: string, path: string, payload?: Share) {
+  return fetch(`${getProxyBaseUrl()}/subscription-quota/${path}`, {
     method: payload ? "PUT" : "GET",
     headers: { [getGlobalLitellmHeaderName()]: `Bearer ${token}`, "Content-Type": "application/json" },
     body: payload ? JSON.stringify(payload) : undefined,
   });
+}
+
+async function quotaRequest<T>(token: string, path: string, payload?: Share): Promise<T | null> {
+  const response = await quotaFetch(token, path, payload);
   if (!payload && response.status === 404) return null;
   if (!response.ok) throw new Error("Could not access subscription quota");
   return response.json() as Promise<T>;
@@ -139,7 +144,17 @@ function ShareEditor({ token }: { token: string }) {
 export function useSubscriptionQuota(accessToken: string) {
   return useQuery({
     queryKey: ["subscription-quota", accessToken],
-    queryFn: () => quotaRequest<Window[]>(accessToken, "me"),
+    queryFn: async () => {
+      const response = await quotaFetch(accessToken, "me");
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Could not access subscription quota");
+      const windows: Window[] = await response.json();
+      return {
+        windows,
+        shared:
+          response.headers.get("X-Subscription-Quota-Mode") === "shared" || windows.some((window) => window.shared),
+      };
+    },
     enabled: !!accessToken,
     refetchInterval: 15000,
     retry: false,
@@ -156,26 +171,32 @@ export function SubscriptionQuota({ quota }: { quota: ReturnType<typeof useSubsc
       </p>
     );
   }
-  if (!quota.data || (!quota.data.length && !admin)) return null;
+  if (!quota.data) return null;
+  const { windows, shared } = quota.data;
+  if (!windows.length && !shared && !admin) return null;
 
   return (
     <section className="mb-5 rounded-lg border bg-card p-4" aria-label="Subscription quota">
-      <h2 className="mb-3 font-semibold">Subscription quota</h2>
+      <h2 className="mb-3 font-semibold">{shared ? "Shared subscription quota" : "Subscription quota"}</h2>
+      {shared && !windows.length && <p className="text-sm text-muted-foreground">Waiting for provider usage</p>}
       <div className="grid gap-3 sm:grid-cols-2">
-        {quota.data.map((window) => (
+        {windows.map((window) => (
           <div key={`${window.source}/${window.window}`} className="rounded-lg border p-3">
             <h3 className="text-sm font-medium">
               {window.source} · {window.window}
             </h3>
             <p className="my-1 text-xl font-semibold">{formatPercent(window.remaining_percent)} remaining</p>
             <p className="text-sm text-muted-foreground">
-              Estimated from usage reported at {formatTime(window.observed_at)}
+              {shared ? "Last updated" : "Estimated from usage reported at"} {formatTime(window.observed_at)}
             </p>
+            {shared && (
+              <p className="text-sm text-muted-foreground">{formatPercent(100 - window.remaining_percent)} used</p>
+            )}
             <p className="text-sm text-muted-foreground">Reset {formatTime(window.resets_at)}</p>
           </div>
         ))}
       </div>
-      {admin && <ShareEditor token={accessToken} />}
+      {admin && !shared && <ShareEditor token={accessToken} />}
     </section>
   );
 }

@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 from typing import Annotated, Final
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -50,11 +50,24 @@ def _admin(auth: UserAPIKeyAuth) -> None:
         raise HTTPException(403, "Proxy administrator required")
 
 
+def shared_quota_enabled() -> bool:
+    return os.getenv("LITELLM_SUBSCRIPTION_QUOTA_MODE") == "shared"
+
+
+def _require_share_mode() -> None:
+    if shared_quota_enabled():
+        raise HTTPException(409, "This gateway uses shared subscription quota")
+
+
 @router.get("/me")
-async def my_quota(auth: Auth):
+async def my_quota(auth: Auth, response: Response):
     if not auth.user_id:
         raise HTTPException(403, "A user account is required")
     ledger: Final = _ledger()
+    if shared_quota_enabled():
+        response.headers["X-Subscription-Quota-Mode"] = "shared"
+        windows_shared: Final = await to_thread(ledger.shared_usage)
+        return [asdict(window) | {"shared": True} for window in windows_shared]
     windows: Final = await to_thread(ledger.usage, auth.user_id)
     return [
         {
@@ -71,6 +84,7 @@ async def my_quota(auth: Auth):
 @router.get("/shares")
 async def list_shares(auth: Auth):
     _admin(auth)
+    _require_share_mode()
     ledger: Final = _ledger()
     rows: Final = await to_thread(ledger.shares)
     return [
@@ -87,6 +101,7 @@ async def list_shares(auth: Auth):
 @router.put("/shares")
 async def update_share(data: ShareInput, auth: Auth):
     _admin(auth)
+    _require_share_mode()
     try:
         await to_thread(_ledger().set_share, data.source, data.user_id, data.percent)
     except ValueError as exc:
