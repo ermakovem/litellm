@@ -7,6 +7,7 @@ This feature uses the native LiteLLM Chat workspace. A profile's assigned share 
 Set these environment variables on the proxy:
 
 - `LITELLM_VPN_PROXY_SECRET` is a random shared secret for the private HTTP connection between the trusted reverse proxy and LiteLLM.
+- Set `LITELLM_SUBSCRIPTION_QUOTA_MODE=shared` to show the same provider balance and reset time to all authenticated profiles. The share editor and per-profile quota accounting are disabled in this mode, and the provider enforces its own limits.
 - `LITELLM_SUBSCRIPTION_QUOTA_DB` is the path to a SQLite file on writable persistent local storage. Run this installation on one host with one writable ledger.
 - `LITELLM_SUBSCRIPTION_QUOTA_MODELS` maps the public model name to a source and relative weights. For example, `{"vpn-test":{"source":"Codex QA","input_weight":1,"cached_input_weight":0.1,"output_weight":4}}`.
 

@@ -67,3 +67,18 @@ def test_late_usage_callback_is_available_for_the_next_observation(tmp_path):
     window = ledger.usage("alice")[0]
     assert window.allocated_points == 2
     assert window.unallocated_points == 2
+
+def test_shared_quota_uses_provider_balance_without_profile_shares(tmp_path):
+    ledger = QuotaLedger(tmp_path / "quota.db")
+    ledger.set_share("codex", "restricted", 1)
+    ledger.observe("codex", "week", Snapshot(10, 100, 10))
+    ledger.record("r1", "codex", "restricted", 12, 3)
+    ledger.observe("codex", "week", Snapshot(14, 100, 20))
+    ledger.observe("another", "session", Snapshot(100, 50, 20))
+
+    quota = ledger.shared_usage("codex")
+    assert len(quota) == 1
+    assert quota[0].remaining_percent == 86
+    assert quota[0].resets_at == 100
+    assert {item.source for item in ledger.shared_usage()} == {"codex", "another"}
+    assert ledger.usage("restricted")[0].remaining_percent == 0
